@@ -57,7 +57,7 @@ jobs:
           status="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.status)' "$build")"
           for _ in $(seq 1 30); do
             [ "$status" = "SUCCEEDED" ] && break
-            case "$status" in FAILED|ABORTED|TIMED-OUT) echo "ACTOR_BUILD_$status"; exit 1;; esac
+            case "$status" in FAILED|ABORTED|TIMED-OUT) curl -fsS "${auth[@]}" "$api/actor-builds/$build_id/log" || true; echo "ACTOR_BUILD_$status"; exit 1;; esac
             sleep 10
             build="$(curl -fsS "${auth[@]}" "$api/actor-builds/$build_id")"
             status="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.status)' "$build")"
