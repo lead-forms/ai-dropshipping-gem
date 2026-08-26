@@ -35,8 +35,8 @@ jobs:
           node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("D1_LIST_FAILED",JSON.stringify(x.errors));process.exit(1)}' "$d1s"
           export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write((x.result||[]).find(v=>v.name==="ai-dropshipping-gem")?.uuid||"")' "$d1s")"
           if [ -z "$D1_ID" ]; then
-            created="$(curl -fsS "${auth[@]}" -d '{"name":"ai-dropshipping-gem","primary_location_hint":"apac"}' "$api/accounts/$ACCOUNT_ID/d1/database")"
-            export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success)process.exit(1);process.stdout.write(x.result.uuid)' "$created")"
+            created="$(curl -sS "${auth[@]}" -d '{"name":"ai-dropshipping-gem","primary_location_hint":"apac"}' "$api/accounts/$ACCOUNT_ID/d1/database")"
+            export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("D1_CREATE_FAILED",JSON.stringify(x.errors));process.exit(1)};process.stdout.write(x.result.uuid)' "$created")"
           fi
 
           buckets="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/r2/buckets")"
