@@ -1,0 +1,1 @@
+{"title":"AI Dropshipping Gem renderer","type":"object","schemaVersion":1,"properties":{"mode":{"title":"Mode","type":"string","enum":["analyze","render"],"editor":"select"}},"required":["mode"]}
