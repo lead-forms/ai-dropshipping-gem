@@ -1,1 +1,1 @@
-{"title":"AI Dropshipping Gem renderer","type":"object","schemaVersion":1,"properties":{"mode":{"title":"Mode","type":"string","enum":["analyze","render"],"editor":"select"}},"required":["mode"]}
+{"title":"AI Dropshipping Gem renderer","type":"object","schemaVersion":1,"properties":{"mode":{"title":"Mode","description":"Analyze source scenes or render a multi-source vertical creative.","type":"string","enum":["analyze","render"],"editor":"select"}},"required":["mode"]}
