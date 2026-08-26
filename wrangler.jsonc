@@ -11,5 +11,5 @@
     "consumers": [{ "queue": "ai-dropshipping-gem-jobs", "max_batch_size": 5, "max_batch_timeout": 10, "max_retries": 3, "dead_letter_queue": "ai-dropshipping-gem-dlq" }]
   },
   "triggers": { "crons": ["*/15 * * * *", "15 3 * * *"] },
-  "vars": { "APP_NAME": "AI Dropshipping Gem", "ENVIRONMENT": "production" }
+  "vars": { "APP_NAME": "AI Dropshipping Gem", "ENVIRONMENT": "production", "APP_ORIGIN": "https://ai-dropshipping-gem.neofitness425.workers.dev" }
 }
