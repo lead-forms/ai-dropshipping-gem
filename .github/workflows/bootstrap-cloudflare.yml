@@ -52,7 +52,7 @@ jobs:
               curl -fsS "${auth[@]}" -d "$version" "$api/acts/$actor_id/versions" >/dev/null
             fi
           fi
-          build="$(curl -fsS "${auth[@]}" -X POST "$api/acts/$actor_id/builds?version=0.1&tag=latest&waitForFinish=60")"
+          build="$(curl -fsS "${auth[@]}" -X POST "$api/acts/$actor_id/builds?version=0.1&tag=latest&useCache=1&waitForFinish=60")"
           build_id="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.id)' "$build")"
           status="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.status)' "$build")"
           for _ in $(seq 1 30); do
@@ -99,9 +99,9 @@ jobs:
         run: |
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           npm run e2e
-          npx wrangler r2 object put ai-dropshipping-gem-media/creatives/e2e-demo.mp4 --file e2e-result.mp4
-          npx wrangler r2 object put ai-dropshipping-gem-media/sources/e2e/source1.mp4 --file e2e-source1.mp4
-          npx wrangler r2 object put ai-dropshipping-gem-media/sources/e2e/source2.mp4 --file e2e-source2.mp4
+          npx wrangler r2 object put ai-dropshipping-gem-media/creatives/e2e-demo.mp4 --remote --file e2e-result.mp4
+          npx wrangler r2 object put ai-dropshipping-gem-media/sources/e2e/source1.mp4 --remote --file e2e-source1.mp4
+          npx wrangler r2 object put ai-dropshipping-gem-media/sources/e2e/source2.mp4 --remote --file e2e-source2.mp4
           npx wrangler d1 execute ai-dropshipping-gem --remote --file scripts/seed-e2e.sql
           npx wrangler d1 execute ai-dropshipping-gem --remote --file scripts/seed-actor-e2e.sql
       - name: Deploy Worker and install provider secret
