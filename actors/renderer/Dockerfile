@@ -1,8 +1,9 @@
-FROM apify/actor-node:24
-USER root
+FROM node:24-bookworm-slim
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-noto-cjk && rm -rf /var/lib/apt/lists/*
+WORKDIR /usr/src/app
 COPY package*.json ./
 RUN npm install --omit=dev --omit=optional
 COPY . ./
-USER myuser
+RUN chown -R node:node /usr/src/app
+USER node
 CMD ["npm", "start"]
