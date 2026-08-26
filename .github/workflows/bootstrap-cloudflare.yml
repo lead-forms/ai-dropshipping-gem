@@ -1,4 +1,5 @@
 name: Bootstrap Cloudflare
+# Idempotent production provisioning
 on:
   workflow_dispatch:
   push:
