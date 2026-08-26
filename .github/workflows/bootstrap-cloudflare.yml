@@ -1,5 +1,4 @@
 name: Bootstrap Cloudflare
-# Idempotent production provisioning
 on:
   workflow_dispatch:
   push:
@@ -14,6 +13,7 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: 2932c698c449f57fde1f4929f8cf7769
     steps:
       - uses: actions/checkout@v4
@@ -21,6 +21,10 @@ jobs:
         with:
           node-version: 22
       - run: npm install
+      - name: Verify Apify connection
+        run: |
+          test -n "$APIFY_API_TOKEN"
+          curl -fsS -H "Authorization: Bearer $APIFY_API_TOKEN" https://api.apify.com/v2/users/me | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.data?.id)process.exit(1);console.log("APIFY_CONNECTION_OK")})'
       - name: Resolve account and provision resources
         shell: bash
         run: |
@@ -31,29 +35,22 @@ jobs:
           export ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID"
           verify="$(curl -sS "${auth[@]}" "$api/user/tokens/verify")"
           node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("TOKEN_VERIFY_FAILED",JSON.stringify(x.errors));process.exit(1)};console.log("TOKEN_VERIFY_OK")' "$verify"
-
           d1s="$(curl -sS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/d1/database?name=ai-dropshipping-gem")"
-          node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("D1_LIST_FAILED",JSON.stringify(x.errors));process.exit(1)}' "$d1s"
-          export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write((x.result||[]).find(v=>v.name==="ai-dropshipping-gem")?.uuid||"")' "$d1s")"
+          export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success)process.exit(1);process.stdout.write((x.result||[]).find(v=>v.name==="ai-dropshipping-gem")?.uuid||"")' "$d1s")"
           if [ -z "$D1_ID" ]; then
             created="$(curl -sS "${auth[@]}" -d '{"name":"ai-dropshipping-gem","primary_location_hint":"apac"}' "$api/accounts/$ACCOUNT_ID/d1/database")"
-            export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("D1_CREATE_FAILED",JSON.stringify(x.errors));process.exit(1)};process.stdout.write(x.result.uuid)' "$created")"
+            export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success)process.exit(1);process.stdout.write(x.result.uuid)' "$created")"
           fi
-
           buckets="$(curl -sS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/r2/buckets")"
-          node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("R2_LIST_FAILED",JSON.stringify(x.errors));process.exit(1)}' "$buckets"
           if ! node -e 'const x=JSON.parse(process.argv[1]);process.exit((x.result?.buckets||x.result||[]).some(v=>v.name==="ai-dropshipping-gem-media")?0:1)' "$buckets"; then
-            made_bucket="$(curl -sS "${auth[@]}" -d '{"name":"ai-dropshipping-gem-media","locationHint":"apac"}' "$api/accounts/$ACCOUNT_ID/r2/buckets")"
-            node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("R2_CREATE_FAILED",JSON.stringify(x.errors));process.exit(1)}' "$made_bucket"
+            curl -fsS "${auth[@]}" -d '{"name":"ai-dropshipping-gem-media","locationHint":"apac"}' "$api/accounts/$ACCOUNT_ID/r2/buckets" >/dev/null
           fi
-
           queues="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/queues")"
           for q in ai-dropshipping-gem-jobs ai-dropshipping-gem-dlq; do
             if ! QUEUE="$q" node -e 'const x=JSON.parse(process.argv[1]);process.exit((x.result||[]).some(v=>v.queue_name===process.env.QUEUE)?0:1)' "$queues"; then
               curl -fsS "${auth[@]}" -d "{\"queue_name\":\"$q\"}" "$api/accounts/$ACCOUNT_ID/queues" >/dev/null
             fi
           done
-
           node -e 'const fs=require("fs");const p="wrangler.jsonc";const x=JSON.parse(fs.readFileSync(p));x.d1_databases[0].database_id=process.env.D1_ID;fs.writeFileSync(p,JSON.stringify(x,null,2)+"\n")'
       - name: Apply database migrations
         run: npx wrangler d1 migrations apply ai-dropshipping-gem --remote
@@ -64,8 +61,10 @@ jobs:
           npm run e2e
           npx wrangler r2 object put ai-dropshipping-gem-media/creatives/e2e-demo.mp4 --file e2e-result.mp4
           npx wrangler d1 execute ai-dropshipping-gem --remote --file scripts/seed-e2e.sql
-      - name: Deploy Worker
-        run: npx wrangler deploy
+      - name: Deploy Worker and install provider secret
+        run: |
+          npx wrangler deploy
+          printf '%s' "$APIFY_API_TOKEN" | npx wrangler secret put APIFY_API_TOKEN
       - name: Production smoke test
         shell: bash
         run: |
@@ -74,5 +73,7 @@ jobs:
           name="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success)process.exit(1);process.stdout.write(x.result.subdomain)' "$subdomain")"
           url="https://ai-dropshipping-gem.$name.workers.dev"
           curl --retry 8 --retry-delay 3 --retry-all-errors -fsS "$url/api/health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.ok)process.exit(1);console.log("PRODUCTION_HEALTH_OK",x.app)})'
-          curl -fsS "$url/api/creatives?status=pending_approval" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.some(v=>v.id==="creative_e2e"&&v.media_key))process.exit(1);console.log("PRODUCTION_E2E_OK creative_e2e")})'
+          passcode="$(node -e 'const c=require("crypto");process.stdout.write(c.createHash("sha256").update(`gem:${process.env.APIFY_API_TOKEN}`).digest("hex").slice(0,24))')"
+          curl -fsS -c cookies.txt -H 'content-type: application/json' -d "{\"passcode\":\"$passcode\"}" "$url/api/session" >/dev/null
+          curl -fsS -b cookies.txt "$url/api/creatives?status=pending_approval" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.some(v=>v.id==="creative_e2e"&&v.media_key))process.exit(1);console.log("PRODUCTION_E2E_OK creative_e2e")})'
           echo "Production URL: $url"
