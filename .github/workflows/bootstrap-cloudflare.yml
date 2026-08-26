@@ -13,6 +13,7 @@ jobs:
     timeout-minutes: 20
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: 2932c698c449f57fde1f4929f8cf7769
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -26,9 +27,7 @@ jobs:
           test -n "$CLOUDFLARE_API_TOKEN"
           api="https://api.cloudflare.com/client/v4"
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
-          accounts="$(curl -fsS "${auth[@]}" "$api/accounts")"
-          export ACCOUNT_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success||!x.result?.length)process.exit(1);process.stdout.write(x.result[0].id)' "$accounts")"
-          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+          export ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID"
 
           d1s="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/d1/database?name=ai-dropshipping-gem")"
           export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write((x.result||[]).find(v=>v.name==="ai-dropshipping-gem")?.uuid||"")' "$d1s")"
