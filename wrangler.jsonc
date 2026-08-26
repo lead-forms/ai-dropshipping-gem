@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/wrangler/config-schema.json",
+  "name": "ai-dropshipping-gem",
+  "main": "src/worker.js",
+  "compatibility_date": "2026-08-01",
+  "assets": { "directory": "./public", "binding": "ASSETS", "run_worker_first": ["/api/*"] },
+  "d1_databases": [{ "binding": "DB", "database_name": "ai-dropshipping-gem", "database_id": "REPLACE_AFTER_CREATE", "migrations_dir": "migrations" }],
+  "r2_buckets": [{ "binding": "MEDIA", "bucket_name": "ai-dropshipping-gem-media" }],
+  "queues": {
+    "producers": [{ "binding": "JOBS", "queue": "ai-dropshipping-gem-jobs" }],
+    "consumers": [{ "queue": "ai-dropshipping-gem-jobs", "max_batch_size": 5, "max_batch_timeout": 10, "max_retries": 3, "dead_letter_queue": "ai-dropshipping-gem-dlq" }]
+  },
+  "triggers": { "crons": ["*/15 * * * *", "15 3 * * *"] },
+  "vars": { "APP_NAME": "AI Dropshipping Gem", "ENVIRONMENT": "production" }
+}
