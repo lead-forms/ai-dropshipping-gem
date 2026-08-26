@@ -1,0 +1,7 @@
+node_modules/
+.wrangler/
+.dev.vars
+.env*
+e2e-result.mp4
+*.tgz
+dist/
