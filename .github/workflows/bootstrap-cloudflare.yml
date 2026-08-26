@@ -11,10 +11,13 @@ on:
       - "wrangler.jsonc"
 permissions:
   contents: read
+concurrency:
+  group: production-bootstrap
+  cancel-in-progress: true
 jobs:
   bootstrap:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       APIFY_API_TOKEN: ${{ secrets.APIFY_API_TOKEN }}
@@ -97,7 +100,10 @@ jobs:
           sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           npm run e2e
           npx wrangler r2 object put ai-dropshipping-gem-media/creatives/e2e-demo.mp4 --file e2e-result.mp4
+          npx wrangler r2 object put ai-dropshipping-gem-media/sources/e2e/source1.mp4 --file e2e-source1.mp4
+          npx wrangler r2 object put ai-dropshipping-gem-media/sources/e2e/source2.mp4 --file e2e-source2.mp4
           npx wrangler d1 execute ai-dropshipping-gem --remote --file scripts/seed-e2e.sql
+          npx wrangler d1 execute ai-dropshipping-gem --remote --file scripts/seed-actor-e2e.sql
       - name: Deploy Worker and install provider secret
         run: |
           npx wrangler deploy
@@ -114,4 +120,17 @@ jobs:
           passcode="$(node -e 'const c=require("crypto");process.stdout.write(c.createHash("sha256").update(`gem:${process.env.APIFY_API_TOKEN}`).digest("hex").slice(0,24))')"
           curl -fsS -c cookies.txt -H 'content-type: application/json' -d "{\"passcode\":\"$passcode\"}" "$url/api/session" >/dev/null
           curl -fsS -b cookies.txt "$url/api/creatives?status=pending_approval" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.some(v=>v.id==="creative_e2e"&&v.media_key))process.exit(1);console.log("PRODUCTION_E2E_OK creative_e2e")})'
+          internal_token="$(node -e 'const c=require("crypto");process.stdout.write(c.createHash("sha256").update(`internal:${process.env.APIFY_API_TOKEN}`).digest("hex").slice(0,48))')"
+          for n in 1 2; do
+            export SOURCE_N="$n" CALLBACK_TOKEN="$internal_token" APP_URL="$url"
+            payload="$(node -e 'process.stdout.write(JSON.stringify({mode:"analyze",sourcePostId:`src_actor_e2e_${process.env.SOURCE_N}`,videoUrl:`${process.env.APP_URL}/api/internal/media/sources%2Fe2e%2Fsource${process.env.SOURCE_N}.mp4?token=${process.env.CALLBACK_TOKEN}`,callbackUrl:`${process.env.APP_URL}/api/internal/analyze-complete`,callbackToken:process.env.CALLBACK_TOKEN}))')"
+            curl -fsS -H "Authorization: Bearer $APIFY_API_TOKEN" -H 'content-type: application/json' -d "$payload" "https://api.apify.com/v2/acts/$RENDERER_ACTOR_ID/run-sync?timeout=300&memory=1024" >/dev/null
+          done
+          actor_e2e_ok=0
+          for _ in $(seq 1 60); do
+            if curl -fsS -b cookies.txt "$url/api/creatives?status=pending_approval" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);process.exit(x.some(v=>v.account_id==="acct_actor_e2e"&&v.media_key&&JSON.parse(v.qa_json||"{}").width===1080)?0:1)})'; then actor_e2e_ok=1; break; fi
+            sleep 10
+          done
+          [ "$actor_e2e_ok" = 1 ]
+          echo "APIFY_RENDER_PIPELINE_E2E_OK"
           echo "Production URL: $url"
