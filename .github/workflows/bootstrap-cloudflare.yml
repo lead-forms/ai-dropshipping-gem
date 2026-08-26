@@ -5,6 +5,10 @@ on:
     branches: [main]
     paths:
       - ".github/workflows/bootstrap-cloudflare.yml"
+      - "actors/renderer/**"
+      - "src/**"
+      - "public/**"
+      - "wrangler.jsonc"
 permissions:
   contents: read
 jobs:
@@ -25,6 +29,39 @@ jobs:
         run: |
           test -n "$APIFY_API_TOKEN"
           curl -fsS -H "Authorization: Bearer $APIFY_API_TOKEN" https://api.apify.com/v2/users/me | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.data?.id)process.exit(1);console.log("APIFY_CONNECTION_OK")})'
+      - name: Provision and build private video renderer
+        shell: bash
+        run: |
+          set -euo pipefail
+          api="https://api.apify.com/v2"
+          auth=(-H "Authorization: Bearer $APIFY_API_TOKEN" -H "Content-Type: application/json")
+          actors="$(curl -fsS "${auth[@]}" "$api/acts?limit=100")"
+          actor_id="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write((x.data?.items||[]).find(v=>v.name==="ai-dropshipping-gem-renderer")?.id||"")' "$actors")"
+          version='{"versionNumber":"0.1","sourceType":"GIT_REPO","gitRepoUrl":"https://github.com/lead-forms/ai-dropshipping-gem.git#main:actors/renderer","buildTag":"latest"}'
+          if [ -z "$actor_id" ]; then
+            payload="$(node -e 'process.stdout.write(JSON.stringify({name:"ai-dropshipping-gem-renderer",title:"AI Dropshipping Gem Renderer",description:"Private FFmpeg scene analysis and vertical creative rendering",isPublic:false,versions:[JSON.parse(process.argv[1])]}))' "$version")"
+            created="$(curl -fsS "${auth[@]}" -d "$payload" "$api/acts")"
+            actor_id="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.id)' "$created")"
+          else
+            if curl -fsS "${auth[@]}" "$api/acts/$actor_id/versions/0.1" >/dev/null; then
+              curl -fsS "${auth[@]}" -d "$version" "$api/acts/$actor_id/versions/0.1" >/dev/null
+            else
+              curl -fsS "${auth[@]}" -d "$version" "$api/acts/$actor_id/versions" >/dev/null
+            fi
+          fi
+          build="$(curl -fsS "${auth[@]}" -X POST "$api/acts/$actor_id/builds?version=0.1&tag=latest&waitForFinish=60")"
+          build_id="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.id)' "$build")"
+          status="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.status)' "$build")"
+          for _ in $(seq 1 30); do
+            [ "$status" = "SUCCEEDED" ] && break
+            case "$status" in FAILED|ABORTED|TIMED-OUT) echo "ACTOR_BUILD_$status"; exit 1;; esac
+            sleep 10
+            build="$(curl -fsS "${auth[@]}" "$api/actor-builds/$build_id")"
+            status="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write(x.data.status)' "$build")"
+          done
+          [ "$status" = "SUCCEEDED" ]
+          echo "RENDERER_ACTOR_ID=$actor_id" >> "$GITHUB_ENV"
+          echo "APIFY_RENDERER_BUILD_OK"
       - name: Resolve account and provision resources
         shell: bash
         run: |
@@ -65,6 +102,7 @@ jobs:
         run: |
           npx wrangler deploy
           printf '%s' "$APIFY_API_TOKEN" | npx wrangler secret put APIFY_API_TOKEN
+          printf '%s' "$RENDERER_ACTOR_ID" | npx wrangler secret put APIFY_RENDERER_ACTOR_ID
       - name: Production smoke test
         shell: bash
         run: |
