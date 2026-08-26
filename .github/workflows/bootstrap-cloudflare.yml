@@ -1,0 +1,66 @@
+name: Bootstrap Cloudflare
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/bootstrap-cloudflare.yml"
+permissions:
+  contents: read
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm install
+      - name: Resolve account and provision resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -n "$CLOUDFLARE_API_TOKEN"
+          api="https://api.cloudflare.com/client/v4"
+          auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
+          accounts="$(curl -fsS "${auth[@]}" "$api/accounts")"
+          export ACCOUNT_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success||!x.result?.length)process.exit(1);process.stdout.write(x.result[0].id)' "$accounts")"
+          echo "CLOUDFLARE_ACCOUNT_ID=$ACCOUNT_ID" >> "$GITHUB_ENV"
+
+          d1s="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/d1/database?name=ai-dropshipping-gem")"
+          export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write((x.result||[]).find(v=>v.name==="ai-dropshipping-gem")?.uuid||"")' "$d1s")"
+          if [ -z "$D1_ID" ]; then
+            created="$(curl -fsS "${auth[@]}" -d '{"name":"ai-dropshipping-gem","primary_location_hint":"apac"}' "$api/accounts/$ACCOUNT_ID/d1/database")"
+            export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success)process.exit(1);process.stdout.write(x.result.uuid)' "$created")"
+          fi
+
+          buckets="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/r2/buckets")"
+          if ! node -e 'const x=JSON.parse(process.argv[1]);process.exit((x.result?.buckets||x.result||[]).some(v=>v.name==="ai-dropshipping-gem-media")?0:1)' "$buckets"; then
+            curl -fsS "${auth[@]}" -d '{"name":"ai-dropshipping-gem-media","locationHint":"apac"}' "$api/accounts/$ACCOUNT_ID/r2/buckets" >/dev/null
+          fi
+
+          queues="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/queues")"
+          for q in ai-dropshipping-gem-jobs ai-dropshipping-gem-dlq; do
+            if ! QUEUE="$q" node -e 'const x=JSON.parse(process.argv[1]);process.exit((x.result||[]).some(v=>v.queue_name===process.env.QUEUE)?0:1)' "$queues"; then
+              curl -fsS "${auth[@]}" -d "{\"queue_name\":\"$q\"}" "$api/accounts/$ACCOUNT_ID/queues" >/dev/null
+            fi
+          done
+
+          node -e 'const fs=require("fs");const p="wrangler.jsonc";const x=JSON.parse(fs.readFileSync(p));x.d1_databases[0].database_id=process.env.D1_ID;fs.writeFileSync(p,JSON.stringify(x,null,2)+"\n")'
+      - name: Apply database migrations
+        run: npx wrangler d1 migrations apply ai-dropshipping-gem --remote
+      - name: Deploy Worker
+        run: npx wrangler deploy
+      - name: Production smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          subdomain="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
+          name="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success)process.exit(1);process.stdout.write(x.result.subdomain)' "$subdomain")"
+          url="https://ai-dropshipping-gem.$name.workers.dev"
+          curl --retry 8 --retry-delay 3 --retry-all-errors -fsS "$url/api/health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.ok)process.exit(1);console.log("PRODUCTION_E2E_OK",x.app)})'
+          echo "Production URL: $url"
