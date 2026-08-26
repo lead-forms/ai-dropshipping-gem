@@ -60,6 +60,7 @@ jobs:
       - name: Generate and seed production E2E creative
         shell: bash
         run: |
+          sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
           npm run e2e
           npx wrangler r2 object put ai-dropshipping-gem-media/creatives/e2e-demo.mp4 --file e2e-result.mp4
           npx wrangler d1 execute ai-dropshipping-gem --remote --file scripts/seed-e2e.sql
