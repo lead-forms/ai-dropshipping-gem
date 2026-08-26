@@ -50,7 +50,10 @@ async function analyze() {
     while (end - start > 3.2) { clips.push([start, start + 2.8]); start += 2.8; }
     if (end - start >= 0.8) clips.push([start, end]);
   }
-  if (clips.length < 2 && duration > 1.6) clips = Array.from({ length: Math.min(5, Math.floor(duration / 1.6)) }, (_, i) => [i * duration / Math.min(5, Math.floor(duration / 1.6)), (i + 1) * duration / Math.min(5, Math.floor(duration / 1.6))]);
+  if (clips.length < 2 && duration > 1.6) {
+    const count = Math.max(2, Math.min(5, Math.floor(duration / 1.2)));
+    clips = Array.from({ length: count }, (_, i) => [i * duration / count, (i + 1) * duration / count]);
+  }
   const payload = clips.slice(0, 20).map(([start,end], index) => ({ startMs: Math.round(start*1000), endMs: Math.round(end*1000), score: 0.7, qualityScore: 0.72, tags: index === 0 ? ['Hook'] : index === clips.length - 1 ? ['CTA'] : ['Demonstration','Benefit'] }));
   const result = await callback(input.callbackUrl, input.callbackToken, { sourcePostId: input.sourcePostId, clips: payload, durationSeconds: duration });
   await Actor.setValue('OUTPUT', { ok: true, clips: payload.length, callback: result });
