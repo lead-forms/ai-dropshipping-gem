@@ -57,6 +57,12 @@ jobs:
           node -e 'const fs=require("fs");const p="wrangler.jsonc";const x=JSON.parse(fs.readFileSync(p));x.d1_databases[0].database_id=process.env.D1_ID;fs.writeFileSync(p,JSON.stringify(x,null,2)+"\n")'
       - name: Apply database migrations
         run: npx wrangler d1 migrations apply ai-dropshipping-gem --remote
+      - name: Generate and seed production E2E creative
+        shell: bash
+        run: |
+          npm run e2e
+          npx wrangler r2 object put ai-dropshipping-gem-media/creatives/e2e-demo.mp4 --file e2e-result.mp4
+          npx wrangler d1 execute ai-dropshipping-gem --remote --file scripts/seed-e2e.sql
       - name: Deploy Worker
         run: npx wrangler deploy
       - name: Production smoke test
@@ -66,5 +72,6 @@ jobs:
           subdomain="$(curl -fsS -H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" "https://api.cloudflare.com/client/v4/accounts/$CLOUDFLARE_ACCOUNT_ID/workers/subdomain")"
           name="$(node -e 'const x=JSON.parse(process.argv[1]);if(!x.success)process.exit(1);process.stdout.write(x.result.subdomain)' "$subdomain")"
           url="https://ai-dropshipping-gem.$name.workers.dev"
-          curl --retry 8 --retry-delay 3 --retry-all-errors -fsS "$url/api/health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.ok)process.exit(1);console.log("PRODUCTION_E2E_OK",x.app)})'
+          curl --retry 8 --retry-delay 3 --retry-all-errors -fsS "$url/api/health" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.ok)process.exit(1);console.log("PRODUCTION_HEALTH_OK",x.app)})'
+          curl -fsS "$url/api/creatives?status=pending_approval" | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>{const x=JSON.parse(s);if(!x.some(v=>v.id==="creative_e2e"&&v.media_key))process.exit(1);console.log("PRODUCTION_E2E_OK creative_e2e")})'
           echo "Production URL: $url"
