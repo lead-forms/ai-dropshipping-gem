@@ -28,8 +28,11 @@ jobs:
           api="https://api.cloudflare.com/client/v4"
           auth=(-H "Authorization: Bearer $CLOUDFLARE_API_TOKEN" -H "Content-Type: application/json")
           export ACCOUNT_ID="$CLOUDFLARE_ACCOUNT_ID"
+          verify="$(curl -sS "${auth[@]}" "$api/user/tokens/verify")"
+          node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("TOKEN_VERIFY_FAILED",JSON.stringify(x.errors));process.exit(1)};console.log("TOKEN_VERIFY_OK")' "$verify"
 
-          d1s="$(curl -fsS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/d1/database?name=ai-dropshipping-gem")"
+          d1s="$(curl -sS "${auth[@]}" "$api/accounts/$ACCOUNT_ID/d1/database?name=ai-dropshipping-gem")"
+          node -e 'const x=JSON.parse(process.argv[1]);if(!x.success){console.error("D1_LIST_FAILED",JSON.stringify(x.errors));process.exit(1)}' "$d1s"
           export D1_ID="$(node -e 'const x=JSON.parse(process.argv[1]);process.stdout.write((x.result||[]).find(v=>v.name==="ai-dropshipping-gem")?.uuid||"")' "$d1s")"
           if [ -z "$D1_ID" ]; then
             created="$(curl -fsS "${auth[@]}" -d '{"name":"ai-dropshipping-gem","primary_location_hint":"apac"}' "$api/accounts/$ACCOUNT_ID/d1/database")"
