@@ -102,7 +102,7 @@ async function ingestWithApify(job, env) {
 
 async function api(request, env) {
   const u = new URL(request.url), p = u.pathname;
-  if (p === '/api/health') return json({ ok: true, app: env.APP_NAME, time: now() });
+  if (p === '/api/health') return json({ ok: true, app: env.APP_NAME, version: '0.2.0', renderer: Boolean(env.APIFY_RENDERER_ACTOR_ID), time: now() });
   if (p.startsWith('/api/internal/')) {
     if (!await internalAuthorized(request, env)) return json({ error: 'unauthorized' }, 401);
     if (p.startsWith('/api/internal/media/') && request.method === 'GET') {
