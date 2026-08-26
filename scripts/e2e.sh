@@ -7,4 +7,5 @@ bash "$root/scripts/render.sh" "$work/manifest.json" "$work/result.mp4"
 ffprobe -v error -show_entries format=duration -of default=nw=1:nk=1 "$work/result.mp4" | awk '{if($1<7||$1>15)exit 1}'
 test "$(ffprobe -v error -select_streams v:0 -show_entries stream=width,height -of csv=p=0 "$work/result.mp4")" = "1080,1920"
 cp "$work/result.mp4" "$root/e2e-result.mp4"
+for n in 1 2 3 4; do cp "$work/source$n.mp4" "$root/e2e-source$n.mp4"; done
 echo "E2E_OK $root/e2e-result.mp4"
